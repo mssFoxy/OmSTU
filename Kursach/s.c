@@ -1,26 +1,39 @@
 #include <windows.h>
 #include <stdio.h>
 
-void constructWindow(int x, int y){
+HANDLE hstdout;//для вывода
+DWORD actlen;//
+CRITICAL_SECTION csec;//для синхронизации процесса
+
+
+void constructWindow(int x, int y){//создание окна
+    COORD size;
+    size.X = x;
+    size.Y = y;
+    SMALL_RECT windowSize= {0, 0, x-1, y-1};//SMALL_RECT-координаты прямоугольной области
+    system("CLS");
+    SetConsoleWindowInfo(hstdout, TRUE, &windowSize);//задаётся размер окна
+    SetConsoleScreenBufferSize(hstdout, size);//задаётся размер буфера символов
+}
+void addVine(int x, int y){//добавление вина
 
 }
-void addVine(int x, int y){
+void addPie(int x, int y){//добавление пирога
 
 }
-void addPie(int x, int y){
+void phyloThread(){//функция работы философов
 
 }
-void phyloThread(){
+void draw(){//рисование
 
 }
-void draw(){
-
-}
-void start(int phyloCount){
+void start(int phyloCount){//сохдание философов
 
 }
 void main(){
+    hstdout = GetStdHandle(STD_OUTPUT_HANDLE);//получение ссылки на окно
     constructWindow(100, 40);
-    start(6);
+    sleep(10000000);
+    //start(6);
     
 }
