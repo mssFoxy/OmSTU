@@ -12,42 +12,43 @@ HANDLE hstdin;//перменная для ввода
 DWORD cNumRead;//DWORD = int
 INPUT_RECORD inBuf[128];
 CRITICAL_SECTION csec;//средство синхронизации
+HANDLE hmtxKnife, hmtxVine;
 
 void constructWindow(int x, int y){//создание окна
-    COORD size;
-    size.X = x;
+    COORD size;//переменная для хранения размера прямоугольника окна
+    size.X = x;//его отдельные координаты
     size.Y = y;
     SMALL_RECT windowSize= {0, 0, x-1, y-1};//SMALL_RECT-координаты прямоугольной области
-    system("CLS");
+    system("CLS");//очистка окна
     SetConsoleWindowInfo(hstdout, TRUE, &windowSize);//задаётся размер окна
     SetConsoleScreenBufferSize(hstdout, size);//задаётся размер буфера символов
 }
 
-int vineCount = 20;
+int vineCount = 20;//переменная хранящая количество порций вина
 
 void addVine(int x, int y){//добавление вина
-if(x > 460 && x < 510 && y > 400 && y < 500){
-        if(vineCount == 0){
-            vineCount = 20;
+if(x > 460 && x < 510 && y > 400 && y < 500){//проверка позиции мыши
+        if(vineCount == 0){//если вино закончилось
+            vineCount = 20;//добавить новую бутылку
         }
     }
 }
 
-int pieCount = 4;
+int pieCount = 4;//переменная хранящая количество пирога
 
 void addPie(int x, int y){//добавление пирога
-    if(x > 350 && x < 450 && y > 300 && y < 400){
-        if(pieCount == 0){
-            pieCount = 4;
+    if(x > 350 && x < 450 && y > 300 && y < 400){//проверка позиции мыши
+        if(pieCount == 0){//если пирог закончился
+            pieCount = 4;//поставить новый
         }
     }
 }
 
 int knifeX = 330, knifeY = 300;//координаты ножа
-int knifeIsTaken = 0;
+int knifeIsTaken = 0;//состояние ножа (занят или не занят)
 
 
-struct phylo{
+struct phylo{//структуа хранящая информацию о философах
     int sleep;//спит
     int moveToPie;//тянется к пирогу
     int moveToVine;//тянется к вину
@@ -61,7 +62,7 @@ struct phylo{
     int armY;//
     int armEndX;//координаты конца руки
     int armEndY;//
-    int armNormX;
+    int armNormX;//координаты нормального положения руки
     int armNormY;
     int posX;//координаты философа
     int posY;//
@@ -72,10 +73,10 @@ struct phylo phyloList[6];
 void phyloThread(void *_num){//функция работы философов
     //берём нож
     int num = _num;
-    while(1){
+    while(1){//бесконечный цикл
         //printf("\n%d", num);
         if(phyloList[num].moveToKnife == 1 && knifeIsTaken == 0 && pieCount > 0)
-        {//проверка координат конца руки
+        {//проверка координат конца руки и их именение во времени
             if(phyloList[num].armEndX > knifeX){
                 phyloList[num].armEndX--;
             }
@@ -90,9 +91,11 @@ void phyloThread(void *_num){//функция работы философов
             }
 
             if(phyloList[num].armEndX == knifeX && phyloList[num].armEndY == knifeY){//если добрались до ножа то он занят
-                knifeIsTaken = 1;
+                WaitForSingleObject(hmtxKnife, INFINITE);//мьютексом блокинуем доступ к ножу
+                knifeIsTaken = 1;//говорим что нож взят
                 phyloList[num].moveToKnife = 0;// не двигает к ножу
                 phyloList[num].moveToPie = 1;// двигает ругу к пирогу
+                ReleaseMutex(hmtxKnife);//разблокируем доступ к ножу
             }
         }
         //берём пирог
@@ -111,9 +114,10 @@ void phyloThread(void *_num){//функция работы философов
             }
             knifeX = phyloList[num].armEndX;
             knifeY = phyloList[num].armEndY;
-
+            //т.к. нож всего один, то одновременный досуп к пирогу не возможен и следовательно тут мьютекс можно не использовать
             if(phyloList[num].armEndX == 400 && phyloList[num].armEndY == 350){//если добрались до пирога
-            Sleep(phyloList[num].sleepTime/2);
+            Sleep(phyloList[num].sleepTime/2);//берем время сна философа и отправляем поток в сон (как будто он режет пирог)
+            //после сна
             pieCount--;
             knifeX = 330, knifeY = 300;
             knifeIsTaken = 0;
@@ -138,11 +142,16 @@ void phyloThread(void *_num){//функция работы философов
             }
 
             if(phyloList[num].armEndX == 485 && phyloList[num].armEndY == 400){//если добрались до вина
-            Sleep(phyloList[num].sleepTime/2);
+            //с помощщью  мьютекса блокируем доступ к вину. Т.к. несколько философов не могут наливать одновременно
+            WaitForSingleObject(hmtxVine, INFINITE);
+            phyloList[num].takingVine = 1;
+            Sleep(phyloList[num].sleepTime/2);//поток  засыпает на некоторое время (будто наливает вино)
+            //после сна
+            phyloList[num].takingVine = 0;
             vineCount--;
             phyloList[num].returning = 1;// двигает руку обратно
             phyloList[num].moveToVine = 0;
-            
+            ReleaseMutex(hmtxVine);//снимаем блокировку на доступ к вину
             }
         }
 
@@ -163,14 +172,17 @@ void phyloThread(void *_num){//функция работы философов
 
             if(phyloList[num].armEndX == phyloList[num].armNormX && phyloList[num].armEndY == phyloList[num].armNormY){//если добрались в нормальное положение руки
             
-            Sleep(phyloList[num].sleepTime);
+            Sleep(phyloList[num].sleepTime);//поток засыпает на неотоорое время имитиру размышленя философа
+            //посе сна
             phyloList[num].returning = 0;// двигает руку обратно
             phyloList[num].moveToKnife = 1;
             }
         }
         Sleep(1);
-       /* int h = 512;
-        int c = 0;
+
+
+       /* int h = 512;// большая вычислительнная нагрузка дял тестирования многопточности
+        int c = 0;//нагружает все ядра процессора на 100 процентов что является доказательством многопоточности
         for(int i = 1; i < h; i++)
         {
             for(int n = 1; n < h; n++)
@@ -221,11 +233,14 @@ void draw(){//рисование
         Ellipse (hdc, x-40, y-40, x+40, y+40);
         MoveToEx(hdc, phyloList[i].armX, phyloList[i].armY, NULL);
         LineTo(hdc, phyloList[i].armEndX, phyloList[i].armEndY);
+        if(phyloList[i].takingVine == 1)
+        {
+            RECT rct ={x-20, y-20, x+20, y+20};
+            FillRect (hdc, &rct, redBrush);
+        }
     }
 }
-void start(int phyloCount){//создание философов
 
-}
 void main(){
     hstdout = GetStdHandle(STD_OUTPUT_HANDLE);//получение ссылки на окно вывода
     hstdin = GetStdHandle(STD_INPUT_HANDLE);//ссылка на стандартный ввод
@@ -235,6 +250,9 @@ void main(){
     GetClientRect(hwnd, &clientRect);//получение размера окна
     SetConsoleMode(hstdin, ENABLE_MOUSE_INPUT | ENABLE_PROCESSED_INPUT);//включение режима консоли с вводом мыши 
                                                                 // и управляющих комбинаций клавиш (ctrl +c)
+
+    hmtxKnife = CreateMutex (NULL, FALSE, NULL);//мьютекс предназначенный для блокировки доступа к ножу
+    hmtxVine = CreateMutex (NULL, FALSE, NULL);//мьютекс предназначенный для блокировки доступа к вину
 
     struct phylo phylo1;
     phylo1.moveToKnife = 1;
@@ -290,6 +308,7 @@ void main(){
 
      struct phylo phylo5;
     phylo5.moveToKnife = 1;
+    phylo5.moveToVine = 0;
     phylo5.posX = 650;
     phylo5.posY = 400;
     phylo5.armX = 610;
@@ -316,24 +335,24 @@ void main(){
     int x = 0;
     int y = 0;
 
-    for(int i = 0; i< 6; i++){
+    for(int i = 0; i< 6; i++){//с помощью цикла запускаем 6 потоков
         HANDLE hthr;
         unsigned long lthr;
-        hthr = (HANDLE)_beginthread(phyloThread, 0,(void*)i);
+        hthr = (HANDLE)_beginthread(phyloThread, 0,(void*)i);//в каждом потоке вызываем функцию философа
     }
 
 
 
      SelectObject(hdc, CreatePen(PS_SOLID, 1, RGB(0, 0, 0)));//создание кисти для рисования линий 
-     grayBrush = CreateSolidBrush(RGB(128,128,128));
-     redBrush = CreateSolidBrush(RGB(255,0,0));
-     greenBrush = CreateSolidBrush(RGB(128,255,128));
+     grayBrush = CreateSolidBrush(RGB(128,128,128));//создание кисти для серой заливки
+     redBrush = CreateSolidBrush(RGB(255,0,0));//создание кисти для красной заливки
+     greenBrush = CreateSolidBrush(RGB(128,255,128));//создание кисти для зеленой заливки
 
     while(1){
         
         GetNumberOfConsoleInputEvents(hstdin, &cNumRead);//получить число событий ввода
         if(cNumRead > 0){
-            ReadConsoleInput(hstdin, inBuf, 128, &cNumRead);
+            ReadConsoleInput(hstdin, inBuf, 128, &cNumRead);//сохраить все события ввода
             if(inBuf[0].EventType == MOUSE_EVENT)
             {//Ессли событие ввода поступило отмыши
                 if(inBuf[0].Event.MouseEvent.dwButtonState == FROM_LEFT_1ST_BUTTON_PRESSED)//если это нажатие кнопки мыши
@@ -357,7 +376,7 @@ void main(){
         phyloThread(4);
         phyloThread(5);*/
 
-        draw();
-        Sleep(1);
+        draw();//вызов отрисовки
+        Sleep(50);//послеотрисовки сон
     }
 }
